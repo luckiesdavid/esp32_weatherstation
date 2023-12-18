@@ -44,11 +44,11 @@ void setup(){
   print_wakeup_reason();
 
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-  Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) +
-  " Seconds");
+  Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
 
 
 //------------HTU21 Sensor-----------
+
   Adafruit_HTU21DF htu = Adafruit_HTU21DF();
   if (!htu.begin()) {
   Serial.println("Check circuit. HTU21D not found!");
@@ -61,8 +61,6 @@ void setup(){
   Serial.print("\t\t");
   Serial.print("Humidity(%): "); 
   Serial.println(hum);
-  delay(2000);
-
 
 //------------WIFI & MQTT-----------
 
@@ -77,10 +75,7 @@ void setup(){
   if (!client.connected()) {
     reconnect();
   }
-
   mqtt_easy_send();
-
-
   delay(TIME_AWAKE * MS_TO_S_FACTOR); // Dauer der Onlineverbindung nach MQTT in ms
 
 
@@ -124,9 +119,6 @@ void setup_wifi() {
   Serial.println(ssid);
 
   WiFi.begin(ssid, password);
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Wifi really connected");
-  }
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");

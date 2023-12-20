@@ -35,9 +35,16 @@ RTC_DATA_ATTR int bootCount = 0;
 const int pin = 34;
 int analog = 0;
 float bat_mV = 0;
+float bat_mV_raw = 0;
 float offset = 0.11;
-int numReadings = 4;
+int numReadings = 8;
 float sum = 0;
+
+// DS18B20 Temp
+const int oneWireBus = 4;  // Pin 4
+OneWire oneWire(oneWireBus);
+DallasTemperature sensors(&oneWire);   
+
 
 //------------Allgemein setup-----------
 
@@ -62,6 +69,11 @@ void setup(){
 //------------intern BAT Sensor-----------
 
   voltage_bat();
+  delay(1500); // Batterieauslesung
+
+//------------DS18B20 Temp-----------
+
+  temp_boden();
 
 //------------WIFI & MQTT-----------
 
@@ -184,40 +196,6 @@ void reconnect() {
 }
 
 
-//------------MQTT Konvertieren for Nodered-----------
-
-void mqtt_convert() {
-  long now = millis();
-  if (now - lastMsg > 5000) {
-    lastMsg = now;
-    Adafruit_HTU21DF htu = Adafruit_HTU21DF();
-    float temperature = 0;
-    float humidity = 0;
-    
-    // Temperature in Celsius
-    temperature = htu.readTemperature();
-    
-    // Convert the value to a char array
-    char tempString[8];
-    dtostrf(temperature, 1, 2, tempString);
-    Serial.print("Temperature: ");
-    Serial.println(tempString);
-    client.publish("esp32_wetterstation_arduino/temperature", tempString);
-    Serial.print(".....published temp");
-
-    humidity = htu.readHumidity();
-    
-    // Convert the value to a char array
-    char humString[8];
-    dtostrf(humidity, 1, 2, humString);
-    Serial.print("Humidity: ");
-    Serial.println(humString);
-    client.publish("esp32_wetterstation_arduino/humidity", humString);
-    Serial.print(".....published humidity");
-
-  }
-}
-
 //-------------MQTT easy send---------------
 
 void mqtt_easy_send() {
@@ -229,6 +207,10 @@ void mqtt_easy_send() {
     }
     float temp_float = htu.readTemperature();
     float hum_float = htu.readHumidity();
+  
+  // DS18B20 Temp
+  sensors.requestTemperatures(); 
+  float boden_temp = sensors.getTempCByIndex(0);
 
   calc_volt();
 
@@ -238,6 +220,10 @@ void mqtt_easy_send() {
   client.publish("esp32_wetterstation_arduino/humidity", hum.c_str());
   String bat = String(bat_mV);
   client.publish("esp32_wetterstation_arduino/battery", bat.c_str());
+  String bat_raw = String(bat_mV_raw);
+  client.publish("esp32_wetterstation_arduino/battery_raw", bat_raw.c_str());
+  String boden = String(boden_temp);
+  client.publish("esp32_wetterstation_arduino/temperature_boden", boden.c_str());
 }
 
 
@@ -262,15 +248,18 @@ void htu21_sensor() {
 //-------------Battery---------------
 
 int calc_volt() {
+  // ohne Mittelwertbildung
+  analog = analogRead(pin);
+  bat_mV_raw = analog * 0.00489 + offset;
+  //Mittelwertbildung
   int total = 0;
   for (int i = 0; i < numReadings; i++) {
     total += analogRead(pin);
     delay(100);
   }
-  sum = total * 0.00489;
+  sum = total * 0.00489; // Faktor laut Datenblatt
   bat_mV = sum / numReadings + offset;
-  return bat_mV;
-
+  return bat_mV, bat_mV_raw;
 }
 
 void voltage_bat() {
@@ -279,13 +268,13 @@ void voltage_bat() {
 
   Serial.print("Battery(V): ");
   Serial.println(bat_mV);
+}
 
-  // Reading potentiometer value
-  //analog = analogRead(pin);
-  //bat_mV = analog * 0.00489 + offset;
-  //Serial.print("Analog Value: ");
-  //Serial.println(analog);
-  //Serial.print("Battery(V): ");
-  //Serial.println(bat_mV);
-  //delay(1000);
+//-------------DS18B20 Temp---------------
+
+void temp_boden() {
+  sensors.requestTemperatures(); 
+  float boden_temp = sensors.getTempCByIndex(0);
+  Serial.print("Temperature Boden(°C): "); 
+  Serial.print(boden_temp);
 }

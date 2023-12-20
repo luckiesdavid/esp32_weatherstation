@@ -23,6 +23,7 @@ const char *mqtt_server = "XXXX";
 const char *mqtt_username = "XXXX";
 const char *mqtt_password = "XXXX";
 
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 long lastMsg = 0;
@@ -30,6 +31,13 @@ char msg[50];
 int value = 0;
 RTC_DATA_ATTR int bootCount = 0;
 
+// Batteriespannung
+const int pin = 34;
+int analog = 0;
+float bat_mV = 0;
+float offset = 0.11;
+int numReadings = 4;
+float sum = 0;
 
 //------------Allgemein setup-----------
 
@@ -47,28 +55,20 @@ void setup(){
   Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
 
 
-//------------HTU21 Sensor-----------
+//------------intern HTU21 Sensor-----------
 
-  Adafruit_HTU21DF htu = Adafruit_HTU21DF();
-  if (!htu.begin()) {
-  Serial.println("Check circuit. HTU21D not found!");
-  while (1);
-  }
-  float temp = htu.readTemperature();
-  float hum = htu.readHumidity();
-  Serial.print("Temperature(°C): "); 
-  Serial.print(temp); 
-  Serial.print("\t\t");
-  Serial.print("Humidity(%): "); 
-  Serial.println(hum);
+  htu21_sensor();
+
+//------------intern BAT Sensor-----------
+
+  voltage_bat();
 
 //------------WIFI & MQTT-----------
 
   setup_wifi();
   delay(1000); // Dauer der Onlineverbindung nach WIFI in ms
   client.setServer(mqtt_server, 1883);
-  client.setCallback(callback);
- // mqtt_convert();
+//  client.setCallback(callback);
   Serial.print("Setup 50% finished\n");
 
 // MQTT aktivieren/deaktiverien
@@ -76,7 +76,7 @@ void setup(){
     reconnect();
   }
   mqtt_easy_send();
-  delay(TIME_AWAKE * MS_TO_S_FACTOR); // Dauer der Onlineverbindung nach MQTT in ms
+  delay(TIME_AWAKE * MS_TO_S_FACTOR); // Dauer der Onlineverbindung nach MQTT
 
 
 //------------Deepsleep-----------
@@ -131,34 +131,34 @@ void setup_wifi() {
 }
 
 
-//------------?????-----------
+//------------Callback inaktiv-----------
 
-void callback(char* topic, byte* message, unsigned int length) {
-  Serial.print("Message arrived on topic: ");
-  Serial.print(topic);
-  Serial.print(". Message: ");
-  String messageTemp;
+// void callback(char* topic, byte* message, unsigned int length) {
+//   Serial.print("Message arrived on topic: ");
+//   Serial.print(topic);
+//   Serial.print(". Message: ");
+//   String messageTemp;
   
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)message[i]);
-    messageTemp += (char)message[i];
-  }
-  Serial.println();
+//   for (int i = 0; i < length; i++) {
+//     Serial.print((char)message[i]);
+//     messageTemp += (char)message[i];
+//   }
+//   Serial.println();
 
-  // Feel free to add more if statements to control more GPIOs with MQTT
+//   // Feel free to add more if statements to control more GPIOs with MQTT
 
-  // If a message is received on the topic esp32/output, you check if the message is either "on" or "off". 
-  // Changes the output state according to the message
-  if (String(topic) == "esp32_wetterstation_arduino/output") {
-    Serial.print("Changing output to ");
-    if(messageTemp == "on"){
-      Serial.println("on");
-    }
-    else if(messageTemp == "off"){
-      Serial.println("off");
-    }
-  }
-}
+//   // If a message is received on the topic esp32/output, you check if the message is either "on" or "off". 
+//   // Changes the output state according to the message
+//   if (String(topic) == "esp32_wetterstation_arduino/output") {
+//     Serial.print("Changing output to ");
+//     if(messageTemp == "on"){
+//       Serial.println("on");
+//     }
+//     else if(messageTemp == "off"){
+//       Serial.println("off");
+//     }
+//   }
+// }
 
 
 //------------MQTT reconnect-----------
@@ -196,9 +196,6 @@ void mqtt_convert() {
     
     // Temperature in Celsius
     temperature = htu.readTemperature();
-    // Uncomment the next line to set temperature in Fahrenheit 
-    // (and comment the previous temperature line)
-    //temperature = 1.8 * bme.readTemperature() + 32; // Temperature in Fahrenheit
     
     // Convert the value to a char array
     char tempString[8];
@@ -233,33 +230,62 @@ void mqtt_easy_send() {
     float temp_float = htu.readTemperature();
     float hum_float = htu.readHumidity();
 
-  
+  calc_volt();
+
   String temp = String(temp_float);
   client.publish("esp32_wetterstation_arduino/temperature", temp.c_str());
   String hum = String(hum_float);
   client.publish("esp32_wetterstation_arduino/humidity", hum.c_str());
+  String bat = String(bat_mV);
+  client.publish("esp32_wetterstation_arduino/battery", bat.c_str());
+}
 
 
-  // Temperature in Celsius
-//   // Uncomment the next line to set temperature in Fahrenheit 
-//   // (and comment the previous temperature line)
-//   //temperature = 1.8 * bme.readTemperature() + 32; // Temperature in Fahrenheit
-  
-//   // Convert the value to a char array
-//  char tempString[8];                                         //verursacht PANIC Erorr
-// //  dtostrf(temperature, 1, 2, tempString);
-//   Serial.print("Temperature: ");
-//   Serial.println(tempString);
-//  client.publish("esp32_wetterstation_arduino/temperature", temp);
-//   Serial.print(".....published temp");
+//-------------HTU21 Sensor---------------
 
-//   humidity = htu.readHumidity();
-  
-//   // Convert the value to a char array
-//   char humString[8];
-// //  dtostrf(humidity, 1, 2, humString);
-//   Serial.print("Humidity: ");
-//   Serial.println(humString);
-//  client.publish("esp32_wetterstation_arduino/humidity", humString);
-//   Serial.print(".....published humidity");
+void htu21_sensor() {
+  Adafruit_HTU21DF htu = Adafruit_HTU21DF();
+  if (!htu.begin()) {
+  Serial.println("Check circuit. HTU21D not found!");
+  while (1);
+  }
+  float temp = htu.readTemperature();
+  float hum = htu.readHumidity();
+  Serial.print("Temperature(°C): "); 
+  Serial.print(temp); 
+  Serial.print("\t\t");
+  Serial.print("Humidity(%): "); 
+  Serial.println(hum);
+}
+
+
+//-------------Battery---------------
+
+int calc_volt() {
+  int total = 0;
+  for (int i = 0; i < numReadings; i++) {
+    total += analogRead(pin);
+    delay(100);
+  }
+  sum = total * 0.00489;
+  bat_mV = sum / numReadings + offset;
+  return bat_mV;
+
+}
+
+void voltage_bat() {
+  // ausgelagert in calc_volt
+  calc_volt();
+
+  Serial.print("Battery(V): ");
+  Serial.println(bat_mV);
+
+  // Reading potentiometer value
+  //analog = analogRead(pin);
+  //bat_mV = analog * 0.00489 + offset;
+  //Serial.print("Analog Value: ");
+  //Serial.println(analog);
+  //Serial.print("Battery(V): ");
+  //Serial.println(bat_mV);
+  //delay(1000);
 }

@@ -216,16 +216,23 @@ void mqtt_easy_send() {
 
   String temp = String(temp_float);
   client.publish("esp32_wetterstation_arduino/temperature", temp.c_str());
+  delay(100);
   String hum = String(hum_float);
   client.publish("esp32_wetterstation_arduino/humidity", hum.c_str());
+  delay(100);
   String bat = String(bat_mV);
   client.publish("esp32_wetterstation_arduino/battery", bat.c_str());
+  delay(100);
   String bat_raw = String(bat_mV_raw);
   client.publish("esp32_wetterstation_arduino/battery_raw", bat_raw.c_str());
+  delay(100);
   String boden = String(boden_temp);
   client.publish("esp32_wetterstation_arduino/temperature_boden", boden.c_str());
+  delay(100);
+  String rssi = String(WiFi.RSSI());
+  client.publish("esp32_wetterstation_arduino/rssi", rssi.c_str());
+  delay(100);
 }
-
 
 //-------------HTU21 Sensor---------------
 
@@ -265,7 +272,6 @@ int calc_volt() {
 void voltage_bat() {
   // ausgelagert in calc_volt
   calc_volt();
-
   Serial.print("Battery(V): ");
   Serial.println(bat_mV);
 }
